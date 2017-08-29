@@ -20,13 +20,20 @@ static void TP_Config(void);
 uint8_t mySPI_GetData(uint8_t adress);
 void mySPI_SendData(uint8_t adress, uint8_t data);
 void SPI5_Init();
-void convertValue(uint8_t inValue, uint8_t inValue2);
+int16_t convertValue(uint8_t inValue, uint8_t inValue2);
 void convert8Value(uint8_t inValue);
 
 static volatile int8_t valueRead, valueRead2;
 static volatile int16_t valueCombined;
-static volatile char value [6];
-static volatile int temp;
+static volatile char value [7];
+static volatile int16_t temp;
+
+static int readX;
+static int readY;
+
+static int moveX = 120, moveXlast = 120;
+static int moveY = 160, moveYlast = 160;
+
 
 int count = 0;
 
@@ -57,13 +64,8 @@ int main(void)
 		valueRead2 = mySPI_GetData(0x29);
 		valueRead = valueRead << 1;
 		valueRead2 = valueRead2 << 1;
-		//valueRead2 = valueRead2 << 1;
-		//valueCombined = valueRead | (valueRead2 << 8)  ;
-		//valueCombined^= 0xC000;
-		//valueCombined =~valueCombined;
-		//temp = (int)valueRead;
-		//valueCombined=~ valueCombined;
-		convertValue(valueRead, valueRead2);
+
+		readY = (int)convertValue(valueRead, valueRead2);
 		LCD_DisplayStringLine(LCD_LINE_2,(uint8_t*)(value));
 		valueCombined = NULL;
 
@@ -74,12 +76,8 @@ int main(void)
 		valueRead2 = mySPI_GetData(0x2B);
 		valueRead = valueRead << 1;
 		valueRead2 = valueRead2 << 1;
-		//valueRead2 = valueRead2 << 1;
-		//valueCombined = valueRead | (valueRead2 << 8);
-		//valueCombined=~ valueCombined;
-		//valueCombined =~valueCombined;
-		//temp = (int)valueRead;
-		convertValue(valueRead, valueRead2);
+
+		readX = (int)convertValue(valueRead, valueRead2);
 		LCD_DisplayStringLine(LCD_LINE_4,(uint8_t*)(value));
 		valueCombined = NULL;
 
@@ -90,17 +88,15 @@ int main(void)
 		valueRead2 = mySPI_GetData(0x2D);
 		valueRead = valueRead << 1;
 		valueRead2 = valueRead2 << 1;
-		//valueRead2 = valueRead2 << 1;
-		//valueCombined = valueRead | (valueRead2 << 8);
-		//valueCombined=~ valueCombined;
-		//valueCombined =~valueCombined;
-		//temp = (int)valueRead;
+
 		convertValue(valueRead, valueRead2);
 		LCD_DisplayStringLine(LCD_LINE_6,(uint8_t*)(value));
 		valueCombined = NULL;
 
 
 
+
+		/*
 		valueRead = mySPI_GetData(0x0F);
 		valueRead = valueRead << 1;
 		convert8Value(valueRead);
@@ -109,21 +105,31 @@ int main(void)
 		//temp = (int)valueRead;
 		LCD_DisplayStringLine(LCD_LINE_10,(uint8_t*)(value));
 		valueCombined = NULL;
-
+		 */
 		count++;
 
-		/*if(count>305)
-			{
-				count = 0;
-				//LCD_Clear(LCD_COLOR_WHITE);
-			}*/
+		LCD_SetTextColor(LCD_COLOR_WHITE);
+		LCD_DrawFullCircle(moveXlast, moveYlast, 2);
 
-		//data = mySPI_GetData(0x29) + 48;
-		//value[0] = mySPI_GetData(0x29) + 48;
-		//value[1] = mySPI_GetData(0x29) + 48;
-		//value[2] = 0;//mySPI_GetData(0x2B) + 48;
-		//value[3] = 0;//mySPI_GetData(0x29) + 48;
-		for (int j = 0;j<1000000;j++);
+		moveX = moveX + readX/208;
+		moveY = moveY + readY/272;
+
+
+
+
+		if(moveX > 230) moveX = 10 + readX/208;
+		else if (moveX < 10) moveX = 230 - readX/208;
+
+		if(moveY > 310) moveY = 10 + readY/272;
+		else if (moveY < 10) moveY = 310 - readY/272;
+
+		LCD_SetTextColor(LCD_COLOR_BLUE);
+		LCD_DrawFullCircle(moveX, moveY, 2);
+
+		moveXlast = moveX;
+		moveYlast = moveY;
+
+		for (int j = 0;j<100000;j++);
 
 	}
 }
@@ -131,110 +137,111 @@ void convert8Value(uint8_t inValue)
 {
 	int counter = 0;
 
-	/*while(counter !=16)
-	{
-		value[counter] = '0';
-		counter++;
-	}*/
 
-	//inValue = inValue << 1;
-	//inValue -= 3;
-	//inValue += 1;
 
 
 	temp = (int)(inValue);
 
 
+	if (temp >= 0)
+		value[0] = '+';
+	else value [0] = '-';
 
 
 	  if (temp < 10000)
-		  value [0] = '0';
-	  else
-		  value [0] = (char)(temp/10000) + 48;
-	  if (temp < 1000)
 		  value [1] = '0';
 	  else
-		  value [1] = (char)((temp/1000)%10) + 48;		//tysi¹ce mV
+		  value [1] = (char)(temp/10000) + 48;
+	  if (temp < 1000)
+		  value [2] = '0';
+	  else
+		  value [2] = (char)((temp/1000)%10) + 48;		//tysi¹ce mV
 	if (temp < 100)
-		value [2] = '0';
-	else
-		value [2] = (char)(((temp/100)%10)) + 48;		//setki mV
-	if (temp < 10)
 		value [3] = '0';
 	else
-		value [3] = (char)((temp%100)/10) + 48;
-	if (temp == 0)
+		value [3] = (char)(((temp/100)%10)) + 48;		//setki mV
+	if (temp < 10)
 		value [4] = '0';
 	else
-		value [4] = (char)(temp%10) + 48;
-	value[5] = NULL;
+		value [4] = (char)((temp%100)/10) + 48;
+	if (temp == 0)
+		value [5] = '0';
+	else
+		value [5] = (char)(temp%10) + 48;
+	value[6] = NULL;
 }
 
 
 
-void convertValue(uint8_t inValue, uint8_t inValue2)
+int16_t convertValue(uint8_t inValue, uint8_t inValue2)
 {
 	int counter = 0;
 	uint16_t valueCombined = 0x0000;
-	/*while(counter !=16)
-	{
-		value[counter] = '0';
-		counter++;
-	}*/
-	//inValue = inValue << 1;
-	//inValue = inValue << 1;
-	//inValue2 = inValue2 << 1;
-	//inValue2 = inValue2 >> 1;
 
-	//inValue = ~inValue;
-	//inValue2 = ~inValue2;
 
 	valueCombined = (uint16_t)inValue2;
 	valueCombined = valueCombined << 8;
 	valueCombined = valueCombined | (uint16_t)inValue;
 
-	//valueCombined = ~valueCombined;
-
-	temp = (int)(valueCombined);
 
 
-	/*if(temp<0)
-		value [0] = '-';
-	else
-		value [0] = '+';*/
+	temp = (int16_t)(valueCombined);
 
-		//if(temp > 65000) temp = temp-65000;
-	  if (temp < 10000)
-		  value [0] = '0';
-	  else
-		  value [0] = (char)(temp/10000) + 48;
-	  if (temp < 1000)
-		  value [1] = '0';
-	  else
-		  value [1] = (char)((temp/1000)%10) + 48;		//tysi¹ce mV
-	if (temp < 100)
-		value [2] = '0';
-	else
-		value [2] = (char)(((temp/100)%10)) + 48;		//setki mV
-	if (temp < 10)
-		value [3] = '0';
-	else
-		value [3] = (char)((temp%100)/10) + 48;
-	if (temp == 0)
-		value [4] = '0';
-	else
-		value [4] = (char)(temp%10) + 48;
-	value[5] = NULL;
-
-	/*while(temp != 0)
+	if (temp >= 0)
 	{
-		value[counter] = (temp % 2) + 48;
-		temp = temp / 2;
-		counter++;
+		value[0] = '+';
+
+
+		  if (temp < 10000)
+			  value [1] = '0';
+		  else
+			  value [1] = (char)(temp/10000) + 48;
+		  if (temp < 1000)
+			  value [2] = '0';
+		  else
+			  value [2] = (char)((temp/1000)%10) + 48;		//tysi¹ce mV
+		if (temp < 100)
+			value [3] = '0';
+		else
+			value [3] = (char)(((temp/100)%10)) + 48;		//setki mV
+		if (temp < 10)
+			value [4] = '0';
+		else
+			value [4] = (char)((temp%100)/10) + 48;
+		if (temp == 0)
+			value [5] = '0';
+		else
+			value [5] = (char)(temp%10) + 48;
+		value[6] = NULL;
 	}
-	value [16] = NULL;*/
+	else
+	{
+		value [0] = '-';
+		  if (temp < -10000)
+			  value [1] = (char)(-temp/10000) + 48;
+		  else
+			  value [1] = '0';
+		  if (temp < -1000)
+			  value [2] = (char)((-temp/1000)%10) + 48;
+		  else
+			  value [2] = '0';
+		if (temp < 100)
+			value [3] = (char)(((-temp/100)%10)) + 48;
+		else
+			value [3] = '0';
+		if (temp < -10)
+			value [4] = (char)((-temp%100)/10) + 48;
+		else
+			value [4] = '0';
+
+		value [5] = (char)(-temp%(10)) + 48;
+		value[6] = NULL;
 
 
+	}
+
+
+	return temp;
 
 }
 
