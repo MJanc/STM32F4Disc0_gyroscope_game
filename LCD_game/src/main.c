@@ -11,6 +11,7 @@
 #include "stm32f4xx.h"
 #include <misc.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "stm32f429i_discovery.h"
 #include "stm32f429i_discovery_lcd.h"
 #include "stm32f429i_discovery_ioe.h"
@@ -22,6 +23,12 @@ void mySPI_SendData(uint8_t adress, uint8_t data);
 void SPI5_Init();
 int16_t convertValue(uint8_t inValue, uint8_t inValue2);
 void convert8Value(uint8_t inValue);
+void DisplayTime(int s, int m, int h);
+void UpdateTime();
+void TIM3_IRQHandler(void);
+
+int measHours, measMinutes, measSeconds, measMiliseconds, measMs;
+static volatile char dispTime [9];
 
 static volatile int8_t valueRead, valueRead2;
 static volatile int16_t valueCombined;
@@ -48,6 +55,7 @@ int main(void)
 
 	TP_Config();
 	SPI5_Init();
+	TIM_Config();
 
 	LCD_SetColors(LCD_COLOR_BLACK, LCD_COLOR_WHITE);
 	mySPI_SendData(0x20, 0x0F);
@@ -93,19 +101,10 @@ int main(void)
 		LCD_DisplayStringLine(LCD_LINE_6,(uint8_t*)(value));
 		valueCombined = NULL;
 
+		DisplayTime(measSeconds, measMinutes, measHours);
+		LCD_DisplayStringLine(LCD_LINE_8,(uint8_t*)(dispTime));
 
 
-
-		/*
-		valueRead = mySPI_GetData(0x0F);
-		valueRead = valueRead << 1;
-		convert8Value(valueRead);
-		//valueRead = valueRead << 1;
-		//valueCombined =~valueCombined;
-		//temp = (int)valueRead;
-		LCD_DisplayStringLine(LCD_LINE_10,(uint8_t*)(value));
-		valueCombined = NULL;
-		 */
 		count++;
 
 		LCD_SetTextColor(LCD_COLOR_WHITE);
@@ -133,6 +132,11 @@ int main(void)
 
 	}
 }
+
+
+/////////////////////////////////////////////////////////////////
+
+
 void convert8Value(uint8_t inValue)
 {
 	int counter = 0;
@@ -244,7 +248,42 @@ int16_t convertValue(uint8_t inValue, uint8_t inValue2)
 	return temp;
 
 }
-
+void DisplayTime(int s, int m, int h)
+{
+	if(h >= 10)
+	{
+		dispTime[0] = h / 10 + 48;
+		dispTime[1] = h % 10 + 48;
+	}
+	else
+	{
+		dispTime[0] ='0';
+		dispTime[1] = h % 10 + 48;
+	}
+	dispTime[2] = ':';
+	if(m >= 10)
+	{
+		dispTime[3] = m / 10 + 48;
+		dispTime[4] = m % 10 + 48;
+	}
+	else
+	{
+		dispTime[3] ='0';
+		dispTime[4] = m % 10 + 48;
+	}
+	dispTime[5] = ':';
+	if(s >= 10)
+	{
+		dispTime[6] = s / 10 + 48;
+		dispTime[7] = s % 10 + 48;
+	}
+	else
+	{
+		dispTime[6] ='0';
+		dispTime[7] = s % 10 + 48;
+	}
+	dispTime[8] = NULL;
+}
 
 
 
@@ -359,4 +398,98 @@ static void TP_Config(void)
     LCD_DisplayStringLine(LCD_LINE_7,(uint8_t*)"Reset the board   ");
     LCD_DisplayStringLine(LCD_LINE_8,(uint8_t*)"and try again     ");
   }
+}
+
+
+void TIM_Config(void)
+{
+  NVIC_InitTypeDef NVIC_InitStructure;
+
+  TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+  TIM_OCInitTypeDef  TIM_OCInitStructure;
+  static uint16_t PrescalerValue = 0;
+
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+
+  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+
+
+  NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStructure);
+
+  NVIC_InitStructure.NVIC_IRQChannel = DMA2_Stream0_IRQn;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStructure);
+
+
+
+
+  PrescalerValue = (uint16_t) ((SystemCoreClock / 2) / 6000000) - 1;
+	TIM_TimeBaseStructure.TIM_Period = 30000 - 1;
+	TIM_TimeBaseStructure.TIM_Prescaler = 0;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+
+	TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
+	TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
+
+	TIM_SelectOutputTrigger(TIM3, TIM_TRGOSource_Update);
+
+
+
+	TIM_PrescalerConfig(TIM3, PrescalerValue, TIM_PSCReloadMode_Immediate);
+
+	TIM_Cmd(TIM3, ENABLE);
+  STM_EVAL_LEDInit(0);
+  STM_EVAL_LEDInit(1);
+
+
+  //STM_EVAL_LEDOn(0);
+ // STM_EVAL_LEDOn(1);
+}
+
+void TIM3_IRQHandler(void)
+{
+
+	 if (TIM_GetITStatus(TIM3, TIM_IT_Update) == SET)
+	 {
+	 TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
+
+	 UpdateTime();
+	 }
+
+}
+void UpdateTime()
+{
+	measMs += 5;
+	if(measMs>=10000)
+	{
+		measMs = 0;
+
+	}
+
+
+	measMiliseconds += 5;
+	if(measMiliseconds >= 1000)
+	{
+		measSeconds++;
+		measMiliseconds = 0;
+	}
+	if(measSeconds == 60)
+	{
+		measMinutes++;
+		measSeconds = 0;
+	}
+	if(measMinutes == 60)
+	{
+		if(++measHours == 24)
+			measHours = 0;
+		measMinutes = 0;
+	}
+
 }
